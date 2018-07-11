@@ -728,22 +728,24 @@ bool UdpBbrSender::SendQueuedPackets()
         std::shared_ptr<PicDataPacket> data_packet(new PicDataPacket());
         //bool got = m_app.GetNextPacket(*data_packet);
         bool update_data_rate = false;
-        bool got = m_video_codec.GetNextPacket(*data_packet);
-        if (got) // get real or fake data
+        //bool got = m_video_codec.GetNextPacket(*data_packet);
+        //if (got) // get real or fake data
+        if (true)
         {
             bbr::PacketHeader header;
             header.m_packet_seq = m_seqNumGen.NextSeq();
             header.m_old_packet_seq = 0;
             header.m_transmission_type = bbr::NOT_RETRANSMISSION;
             header.m_sent_time = Simulator::Now().GetMilliSeconds();
-            header.m_data_length = data_packet->data_length;
-            //header.m_data_length = DEFAULT_PAYLOAD_SIZE;
+            //header.m_data_length = data_packet->data_length;
+            header.m_data_length = DEFAULT_PAYLOAD_SIZE;
             header.m_data_packet = data_packet;
-            header.m_data_seq = data_packet->data_seq;
+            //header.m_data_seq = data_packet->data_seq;
+            header.m_data_seq = header.m_packet_seq;
 
 
-            header.PicType = data_packet->PicType;
-            //header.PicType = pic_type_real;
+            //header.PicType = data_packet->PicType;
+            header.PicType = pic_type_real;
             header.PicIndex = data_packet->PicIndex;
             header.PicDataLen = data_packet->PicDataLen;
             header.PicPktNum = data_packet->PicPktNum;

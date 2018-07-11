@@ -53,7 +53,7 @@ using namespace ns3;
 
 static const int kServerPort = 9;
 static const float kServerStart = 1.0f;
-static const float kDuration = 200.0f;
+static const float kDuration = 60.0f;
 static const float kClientStart = kServerStart + 1.0;
 static const float kClientStop = kClientStart + kDuration;
 static const float kServerStop = kClientStop + 1.0;
@@ -148,6 +148,8 @@ int main(int argc, char *argv[])
     uint32_t nCsmaLeft = 3;
     uint32_t nCsmaRight = 3;
     bool tracing = true;
+    double lossrate = 0.00;
+    std::string linkrate = "2Mbps";
 
     //m_timer.SetDelay(MilliSeconds(50000));//20s
     //m_timer.SetFunction(&OnTimer);
@@ -158,6 +160,8 @@ int main(int argc, char *argv[])
     cmd.AddValue("nCsmaRight", "Number of CSMA nodes/devices at right", nCsmaRight);
     cmd.AddValue("verbose", "Tell bbr applications to log if true", verbose);
     cmd.AddValue("tracing", "Enable pcap tracing", tracing);
+    cmd.AddValue("linkrate", "Tell p2p linkrate", linkrate);
+    cmd.AddValue("lossrate", "Tell p2p lossrate", lossrate);
 
     cmd.Parse(argc, argv);
 
@@ -181,15 +185,15 @@ int main(int argc, char *argv[])
     p2pNodes.Create(2);
 
     //PointToPointHelper pointToPoint;
-    pointToPoint.SetDeviceAttribute("DataRate", StringValue("1.5Mbps"));
-    pointToPoint.SetChannelAttribute("Delay", StringValue("50ms"));
+    pointToPoint.SetDeviceAttribute("DataRate", StringValue(linkrate));
+    pointToPoint.SetChannelAttribute("Delay", StringValue("100ms"));
 
     //NetDeviceContainer p2pDevices;
     p2pDevices = pointToPoint.Install(p2pNodes);
 
     Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
             //"ErrorRate", DoubleValue(0.01),
-            "ErrorRate", DoubleValue(0.000),
+            "ErrorRate", DoubleValue(lossrate),
             "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
     p2pDevices.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
 
