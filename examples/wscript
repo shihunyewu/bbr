@@ -1,0 +1,13 @@
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+def build(bld):
+    obj = bld.create_ns3_program('bbr-test-normal', ['bbr', 'applications', 'bridge', 'config-store',
+                                  'csma', 'csma-layout', 'dsr',
+                                  'flow-monitor', 'internet', 'lr-wpan',
+                                  'lte', 'mesh', 'mobility', 'olsr',
+                                  'point-to-point', 'sixlowpan', 'stats',
+                                  'uan', 'wifi', 'internet-apps',
+                                  'point-to-point-layout', 'traffic-control'])
+    obj.source = 'bbr-test-normal.cc'
+
+
