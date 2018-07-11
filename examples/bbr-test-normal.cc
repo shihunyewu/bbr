@@ -142,6 +142,16 @@ void OnTimer()
     m_timer.Schedule();
 }
 
+void LossRateSim() {
+    double lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
+    std::cout << "lossrate : " << lossrate << std::endl;
+    Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
+            "ErrorRate", DoubleValue(lossrate),
+            "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
+    Config::Set("/NodeList/0/DeviceList/1/$ns3::PointToPointNetDevice/ReceiveErrorModel", PointerValue(em)); 
+    m_timer.SetDelay(MilliSeconds(1000));
+}
+
 int main(int argc, char *argv[])
 {
     bool verbose = true;
@@ -150,10 +160,8 @@ int main(int argc, char *argv[])
     bool tracing = true;
     double lossrate = 0.00;
     std::string linkrate = "2Mbps";
+    int testcase = 1;
 
-    //m_timer.SetDelay(MilliSeconds(50000));//20s
-    //m_timer.SetFunction(&OnTimer);
-    //m_timer.Schedule();
 
     CommandLine cmd;
     cmd.AddValue("nCsmaLeft", "Number of CSMA nodes/devices at left", nCsmaLeft);
@@ -162,6 +170,7 @@ int main(int argc, char *argv[])
     cmd.AddValue("tracing", "Enable pcap tracing", tracing);
     cmd.AddValue("linkrate", "Tell p2p linkrate", linkrate);
     cmd.AddValue("lossrate", "Tell p2p lossrate", lossrate);
+    cmd.AddValue("testcase", "Tell which test case", testcase);
 
     cmd.Parse(argc, argv);
 
@@ -191,6 +200,21 @@ int main(int argc, char *argv[])
     //NetDeviceContainer p2pDevices;
     p2pDevices = pointToPoint.Install(p2pNodes);
 
+    switch (testcase) {
+        case 1:
+            break;
+        case 2:
+            break;
+        case 3:
+            lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
+            m_timer.SetDelay(MilliSeconds(3000));
+            m_timer.SetFunction(&LossRateSim);
+            m_timer.Schedule();
+            break; 
+        case 4:
+            break;
+    }
+    lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
     Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
             //"ErrorRate", DoubleValue(0.01),
             "ErrorRate", DoubleValue(lossrate),
