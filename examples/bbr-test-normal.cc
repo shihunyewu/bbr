@@ -26,6 +26,8 @@
 //#include "../helper/video-helper.h"
 
 
+#include <ctime>
+#include <cstdlib>
 #include <string>
 #include <fstream>
 #include "ns3/core-module.h"
@@ -150,6 +152,7 @@ void LossRateSim() {
             "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
     Config::Set("/NodeList/0/DeviceList/1/$ns3::PointToPointNetDevice/ReceiveErrorModel", PointerValue(em)); 
     m_timer.SetDelay(MilliSeconds(1000));
+    m_timer.Schedule();
 }
 
 int main(int argc, char *argv[])
@@ -161,6 +164,10 @@ int main(int argc, char *argv[])
     double lossrate = 0.00;
     std::string linkrate = "2Mbps";
     int testcase = 1;
+    int users = 1;
+    bool useDropTailQueue = false;
+    std::string queueSize = "0MB";
+    //uint32_t queueSize = 1024;
 
 
     CommandLine cmd;
@@ -171,8 +178,39 @@ int main(int argc, char *argv[])
     cmd.AddValue("linkrate", "Tell p2p linkrate", linkrate);
     cmd.AddValue("lossrate", "Tell p2p lossrate", lossrate);
     cmd.AddValue("testcase", "Tell which test case", testcase);
+    cmd.AddValue("users", "Tell which test case", users);
+    cmd.AddValue("queueSize", "Tell the DropTailQueue size of test case 2", queueSize);
 
     cmd.Parse(argc, argv);
+
+    switch (testcase) {
+        case 1:
+            if (lossrate == 0.00) {
+                std::cout << "You may not set the --lossrate" << std::endl;
+            }
+            std::cout << "lossrate:" << lossrate << std::endl;
+            break;
+        case 2:
+            useDropTailQueue = true;
+            if (queueSize == "0MB") {
+                std::cerr << "--queueSize must be set in testcase 2" << std::endl;
+                return -1;
+            }
+            std::cout << "Drop Queue Size=" << queueSize << std::endl;
+            break;
+        case 3:
+            std::srand(std::time(nullptr));
+            lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
+            m_timer.SetDelay(MilliSeconds(3000));
+            m_timer.SetFunction(&LossRateSim);
+            m_timer.Schedule();
+            break; 
+        case 4:
+            std::cout << "Users=" << users << std::endl;
+            //users = 4;
+            // multi bbr sender.
+            break;
+    }
 
     // Check for valid number of csma nodes
     // 250 should be enough, otherwise IP addresses
@@ -197,29 +235,46 @@ int main(int argc, char *argv[])
     pointToPoint.SetDeviceAttribute("DataRate", StringValue(linkrate));
     pointToPoint.SetChannelAttribute("Delay", StringValue("100ms"));
 
+
     //NetDeviceContainer p2pDevices;
+    //pointToPoint.SetQueue("ns3::DropTailQueue", "MaxSize", StringValue(queueSize)); 
     p2pDevices = pointToPoint.Install(p2pNodes);
 
-    switch (testcase) {
-        case 1:
-            break;
-        case 2:
-            break;
-        case 3:
-            lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
-            m_timer.SetDelay(MilliSeconds(3000));
-            m_timer.SetFunction(&LossRateSim);
-            m_timer.Schedule();
-            break; 
-        case 4:
-            break;
-    }
-    lossrate = std::rand() % 1001 / 1001.0 * 50.0 / 100.0; //0-50 %
     Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
             //"ErrorRate", DoubleValue(0.01),
             "ErrorRate", DoubleValue(lossrate),
             "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
     p2pDevices.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
+    if (useDropTailQueue) {
+        //Config::SetDefault ("ns3::QueueBase::MaxSize", StringValue ("80p"));
+        std::cout << "Set Queue" << std::endl;
+        Ptr<DropTailQueue<Packet> > queue = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (0))->GetQueue ());
+        //queue->SetMode(ns3::DropTailQueue::BYTES);
+        queue->SetAttribute ("MaxSize", StringValue ("10p"));
+        Ptr<DropTailQueue<Packet> > queue2 = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (1))->GetQueue ());
+        queue2->SetAttribute ("MaxSize", StringValue ("10p"));
+
+        QueueSizeValue limit;
+        Config::Set ("/NodeList/0/DeviceList/0/TxQueue/MaxSize", StringValue ("1p"));
+        Config::Set ("/NodeList/1/DeviceList/0/TxQueue/MaxSize", StringValue ("1p"));
+
+        PointerValue ptr; 
+        p2pDevices.Get(0)->GetAttribute ("TxQueue", ptr);
+        Ptr<Queue<Packet> > txQueue = ptr.Get<Queue<Packet> > ();
+        Ptr<DropTailQueue<Packet> > dtq = txQueue->GetObject <DropTailQueue<Packet> > ();NS_ASSERT (dtq);
+        dtq->GetAttribute ("MaxSize", limit);
+
+        std::cout << "1.  dtq limit: " << limit.Get ().GetValue () << " packets" << std::endl;
+
+        p2pDevices.Get(1)->GetAttribute ("TxQueue", ptr);
+        Ptr<Queue<Packet> > enQueue = ptr.Get<Queue<Packet> > ();
+        dtq = enQueue->GetObject <DropTailQueue<Packet> > ();
+        NS_ASSERT (dtq);                                                                                                                                                                  
+        dtq->GetAttribute ("MaxSize", limit);
+
+        std::cout << "2.  enq limit: " << limit.Get ().GetValue () << " packets" << std::endl; 
+    }
+    //return 0;
 
     // CsmaHelper csma;
     // csma.SetChannelAttribute("DataRate", StringValue("100.0Mbps"));
@@ -260,21 +315,33 @@ int main(int argc, char *argv[])
     // address.SetBase("10.1.3.0", "255.255.255.0");
     // address.Assign(csmaDevicesLeft);
 
-    UdpBbrReceiverHelper bbrServer(kServerPort);
-    //VideoReceiverHelper bbrServer(kServerPort);
-    //ApplicationContainer serverApps = bbrServer.Install(csmaNodesRight.Get(nCsmaRight));
 
-    ApplicationContainer serverApps = bbrServer.Install(p2pNodes.Get(1));
-
-    UdpBbrSenderHelper bbrClient(p2pInterfaces.GetAddress(1), kServerPort);
-    //UdpBbrSenderHelper bbrClient(csmaInterfacesRight.GetAddress(nCsmaLeft), kServerPort);
-    //VideoSenderHelper bbrClient(csmaInterfacesRight.GetAddress(nCsmaLeft), kServerPort);
-    bbrClient.SetAttribute("Duration", TimeValue(Seconds(0)));
-    bbrClient.SetAttribute("DataRate", DataRateValue(DataRate("1.0Mb/s")));
-    bbrClient.SetAttribute("PacketSize", UintegerValue(1024));
     //ApplicationContainer clientApps = bbrClient.Install(csmaNodesLeft.Get(nCsmaLeft));
-    ApplicationContainer clientApps = bbrClient.Install(p2pNodes.Get(0));
-    Names::Add("/Names/BbrSender", clientApps.Get(0));
+
+    std::vector<ApplicationContainer> serverApps;
+    std::vector<ApplicationContainer> clientApps;
+    for (uint32_t i = 0; i < users; ++i) {
+        UdpBbrReceiverHelper bbrServer(kServerPort + i);
+        //VideoReceiverHelper bbrServer(kServerPort);
+        //ApplicationContainer serverApps = bbrServer.Install(csmaNodesRight.Get(nCsmaRight));
+        ApplicationContainer serverApp = bbrServer.Install(p2pNodes.Get(1));
+        serverApps.push_back(serverApp);
+        serverApp.Start(Seconds(kServerStart));
+        serverApp.Stop(Seconds(kServerStop));
+
+        UdpBbrSenderHelper bbrClient(i + 1, p2pInterfaces.GetAddress(1), kServerPort + i);
+        bbrClient.SetAttribute("Duration", TimeValue(Seconds(0)));
+        bbrClient.SetAttribute("DataRate", DataRateValue(DataRate("1.0Mb/s")));
+        bbrClient.SetAttribute("PacketSize", UintegerValue(1024));
+
+        ApplicationContainer clientApp = bbrClient.Install(p2pNodes.Get(0));
+        clientApp.Start(Seconds(kClientStart));
+        clientApp.Stop(Seconds(kClientStop));
+
+        clientApps.push_back(clientApp);
+        //Names::Add("/Names/BbrSender", clientApp.Get(0)); 
+    }
+
 
 
 //    if(need_tcp){
@@ -301,6 +368,7 @@ int main(int argc, char *argv[])
 //    }
 
 
+    /*
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     // Create the gnuplot helper.
@@ -362,11 +430,8 @@ int main(int argc, char *argv[])
                           "Output",
                           "Bandwidth",
                           GnuplotAggregator::KEY_INSIDE);
+                          */
 
-    serverApps.Start(Seconds(kServerStart));
-    serverApps.Stop(Seconds(kServerStop));
-    clientApps.Start(Seconds(kClientStart));
-    clientApps.Stop(Seconds(kClientStop));
 
     Simulator::Stop(Seconds(kServerStop));
 

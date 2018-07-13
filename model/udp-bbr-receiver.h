@@ -13,6 +13,7 @@
 #include "ns3/address.h"
 #include "ns3/packet-loss-counter.h"
 #include "ns3/core-module.h"
+#include "ns3/traced-value.h"
 
 #include "packet-header.h"
 #include "simple-alarm.h"
@@ -71,8 +72,15 @@ private:
   // How many consecutive packets have arrived without sending an ack.
   uint32_t m_num_packets_received_since_last_ack_sent;
 
+  // To caculate receiver bandwidth.
+  uint64_t m_num_bytes_received_since_last_ack_sent;
+  uint64_t m_last_ack_sent_time;
+
   ReceivedPacketManager *m_receivedPacketManager;
   bbr::SimpleAlarm m_ack_alarm;
+
+  /*********************/ // For caculate receive bandwidth.
+  TracedValue<uint32_t> m_bandwidth;
 };
 }
 

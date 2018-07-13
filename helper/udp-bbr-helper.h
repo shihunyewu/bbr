@@ -36,7 +36,7 @@ class UdpBbrSenderHelper
 {
   public:
   UdpBbrSenderHelper();
-  UdpBbrSenderHelper(Address ip, uint16_t port);
+  UdpBbrSenderHelper(uint32_t id, Address ip, uint16_t port);
   UdpBbrSenderHelper(Address addr);
 
   void SetAttribute(std::string name, const AttributeValue &value);

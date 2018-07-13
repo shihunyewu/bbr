@@ -43,6 +43,12 @@ UdpBbrReceiver::GetTypeId(void)
                                           UintegerValue(100),
                                           MakeUintegerAccessor(&UdpBbrReceiver::m_port),
                                           MakeUintegerChecker<uint16_t>());
+    /*
+                            .AddTraceSource("Bandwidth",
+                                            "Bandwidth",
+                                            MakeTraceSourceAccessor(&UdpBbrReceiver::m_bandwidth),
+                                            "ns3::TracedValueCallback::Uint32");
+                                            */
     return tid;
 }
 
@@ -50,7 +56,9 @@ UdpBbrReceiver::UdpBbrReceiver()
     : m_lossCounter(248),
       m_timer(Timer::REMOVE_ON_DESTROY),
       m_received(0),
-      m_num_packets_received_since_last_ack_sent(0)
+      m_num_packets_received_since_last_ack_sent(0),
+      m_num_bytes_received_since_last_ack_sent(0),
+      m_last_ack_sent_time(0)
 {
     NS_LOG_FUNCTION(this);
     m_timer.SetDelay(MilliSeconds(10));//10ms
@@ -185,6 +193,7 @@ void UdpBbrReceiver::OnStreamPacket(const PacketHeader &header, int size)
     m_lossCounter.NotifyReceived(currentSequenceNumber);
     m_received++;
     ++m_num_packets_received_since_last_ack_sent;
+    m_num_bytes_received_since_last_ack_sent += size;
 
     m_receivedPacketManager->RecordPacketReceived(header, now);
 
@@ -276,6 +285,25 @@ void UdpBbrReceiver::MaybeSendAck()
 
 void UdpBbrReceiver::SendAck()
 {
+    uint32_t bandwidth = 0;
+    if (m_last_ack_sent_time == 0) {
+        m_last_ack_sent_time = Simulator::Now().GetMilliSeconds();
+    } else {
+        if (m_num_bytes_received_since_last_ack_sent > 1000000) { // 1MBytes = 8Mbits 
+            bandwidth = m_num_bytes_received_since_last_ack_sent / (Simulator::Now().GetMilliSeconds() - m_last_ack_sent_time + 0.1); 
+            bandwidth *= 8 * 1000;
+            //bandwidth /= 1000.0;
+            NS_LOG_INFO("m_num_bytes_received_since_last_ack_sent=" << m_num_bytes_received_since_last_ack_sent
+                    << " m_last_ack_sent_time=" << m_last_ack_sent_time
+                    << " now=" << Simulator::Now().GetMilliSeconds()
+                    << " ReceiverBandwidth=" << bandwidth
+                    << "bps"
+                    );
+            m_last_ack_sent_time = Simulator::Now().GetMilliSeconds();
+
+            m_num_bytes_received_since_last_ack_sent = 0; 
+        }
+    }
     m_num_packets_received_since_last_ack_sent = 0;
 
     const AckFrame *ack_frame = m_receivedPacketManager->GetUpdatedAckFrame(Simulator::Now().GetMilliSeconds());
@@ -287,7 +315,7 @@ void UdpBbrReceiver::SendAck()
     {
         NS_LOG_INFO("Send Ack: "
                     << *ack_frame
-                    << " to address: "
+                    << " to address: " 
                     << InetSocketAddress::ConvertFrom(m_from).GetIpv4());
 
         NS_LOG_INFO("Lost pkt num : " << m_lossCounter.GetLost());

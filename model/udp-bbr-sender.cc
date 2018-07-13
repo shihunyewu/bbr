@@ -314,6 +314,11 @@ UdpBbrSender::GetTypeId(void)
                                           UintegerValue(100),
                                           MakeUintegerAccessor(&UdpBbrSender::m_peerPort),
                                           MakeUintegerChecker<uint16_t>())
+                            .AddAttribute("AppId",
+                                          "The Appid",
+                                          UintegerValue(100),
+                                          MakeUintegerAccessor(&UdpBbrSender::m_appId),
+                                          MakeUintegerChecker<uint16_t>())
                             .AddAttribute("PacketSize",
                                           "Size of packets generated. The minimum packet size is 12 bytes which is the size of the header carrying the sequence number and the time stamp.",
                                           UintegerValue(1024),
@@ -432,6 +437,10 @@ void UdpBbrSender::StartApplication(void)
     }
 
     m_socket->SetRecvCallback(MakeCallback(&UdpBbrSender::HandleRead, this));
+    m_socket->SetConnectCallback(
+            MakeCallback(&UdpBbrSender::ConnectionSucceeded, this),
+            MakeCallback(&UdpBbrSender::ConnectionFailed, this)
+            );
     m_socket->SetAllowBroadcast(true);
 
     m_sentPacketManager = new bbr::SentPacketManager(&stats_, bbr::kBBR, bbr::kAdaptiveTime);
@@ -439,6 +448,20 @@ void UdpBbrSender::StartApplication(void)
     //m_timer_updateStreamStatus.Schedule();
 
     m_video_codec.StartApp();
+}
+
+void UdpBbrSender::ConnectionSucceeded(Ptr<Socket> socket)
+{
+    NS_LOG_INFO(this << socket);
+    std::cout << "AppId " << m_appId << " UdpBbrSender Connection succeeded";
+}
+
+void UdpBbrSender::ConnectionFailed(Ptr<Socket> socket)
+{
+    NS_LOG_INFO(this << socket); NS_LOG_LOGIC(
+            "UdpBbrSender, Connection Failed"
+            );
+
 }
 
 void UdpBbrSender::StopApplication(void)
@@ -687,6 +710,7 @@ bool UdpBbrSender::SendQueuedPackets()
 {
     // First check if queued data has time out
     uint64_t min_access_delay = m_video_codec.GetCurMaxPicQueueDelay(Simulator::Now().GetMilliSeconds());
+    min_access_delay = 0;
     if(min_access_delay > 200){// Decrease codec output rate
         // Get current bandwidth and set it to codec
         float bandwidth = m_sentPacketManager->BandwidthEstimate().ToBitsPerSecond()*1.0;
@@ -746,11 +770,13 @@ bool UdpBbrSender::SendQueuedPackets()
 
             //header.PicType = data_packet->PicType;
             header.PicType = pic_type_real;
+            //header.PicIndex = data_packet->PicIndex;
             header.PicIndex = data_packet->PicIndex;
-            header.PicDataLen = data_packet->PicDataLen;
+            //header.PicDataLen = data_packet->PicDataLen;
             header.PicPktNum = data_packet->PicPktNum;
             header.PicCurPktSeq = data_packet->PicCurPktSeq;
-            header.PicGenTime = data_packet->PicGenTime;
+            //header.PicGenTime = data_packet->PicGenTime;
+            header.PicGenTime = Simulator::Now().GetMilliSeconds();
             //
             HandleSend(header);
             ;
@@ -861,6 +887,7 @@ void UdpBbrSender::HandleSend(PacketHeader &header)
         }
 
         std::cout<<"SendData " << this
+                                << "appId" << m_appId
                                 << " Seq:("
                                 << header.m_data_seq
                                 << ", "
@@ -962,6 +989,7 @@ void UdpBbrSender::OnAckPacket(const AckFrame &ack_frame)
                            << " LeastUnacked " << m_sentPacketManager->GetLeastUnacked()
                            << " ack " << ack_frame);
     NS_LOG_INFO("OnAck " << this
+                         << " AppId=" << m_appId
                          << " time "
                          << Simulator::Now().GetMilliSeconds()
                          << " m_traceRtt "
@@ -971,7 +999,8 @@ void UdpBbrSender::OnAckPacket(const AckFrame &ack_frame)
                          << " m_bandwidth "
                          << m_bandwidth);
 
-    std::cout<< "Sender" << " time "
+    std::cout<< "Sender" << " AppId " << m_appId
+                         << " time "
                          << Simulator::Now().GetMilliSeconds()
                          << " Rtt "
                          << m_traceRtt

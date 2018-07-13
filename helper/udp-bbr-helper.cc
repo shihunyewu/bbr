@@ -44,11 +44,12 @@ UdpBbrSenderHelper::UdpBbrSenderHelper()
 {
 }
 
-UdpBbrSenderHelper::UdpBbrSenderHelper(Address address, uint16_t port)
+UdpBbrSenderHelper::UdpBbrSenderHelper(uint32_t appId, Address address, uint16_t port)
 {
     m_factory.SetTypeId(UdpBbrSender::GetTypeId());
     SetAttribute("RemoteAddress", AddressValue(address));
     SetAttribute("RemotePort", UintegerValue(port));
+    SetAttribute("AppId", UintegerValue(appId)); 
 }
 
 UdpBbrSenderHelper::UdpBbrSenderHelper(Address address)

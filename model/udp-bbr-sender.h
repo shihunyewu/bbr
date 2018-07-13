@@ -204,6 +204,9 @@ class UdpBbrSender : public Application
 
   void SendStopWaitingFrame();
 
+  void ConnectionSucceeded(Ptr<Socket> socket); // Called when the connections has succeeded
+  void ConnectionFailed(Ptr<Socket> socket); // Called when the connection has failed.
+
   private:
     virtual void StartApplication(void);
     virtual void StopApplication(void);
@@ -246,6 +249,8 @@ class UdpBbrSender : public Application
     // for advance control
     PicSentInfoSampleQueue          m_sampleQueue;
     VideoStreamAccessDelayStatus    m_streamStatus;
+
+    uint32_t m_appId;
 };
 }
 
