@@ -250,13 +250,13 @@ int main(int argc, char *argv[])
         std::cout << "Set Queue" << std::endl;
         Ptr<DropTailQueue<Packet> > queue = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (0))->GetQueue ());
         //queue->SetMode(ns3::DropTailQueue::BYTES);
-        queue->SetAttribute ("MaxSize", StringValue ("10p"));
+        queue->SetAttribute ("MaxSize", StringValue ("32p"));
         Ptr<DropTailQueue<Packet> > queue2 = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (1))->GetQueue ());
-        queue2->SetAttribute ("MaxSize", StringValue ("10p"));
+        queue2->SetAttribute ("MaxSize", StringValue ("32p"));
 
         QueueSizeValue limit;
-        Config::Set ("/NodeList/0/DeviceList/0/TxQueue/MaxSize", StringValue ("1p"));
-        Config::Set ("/NodeList/1/DeviceList/0/TxQueue/MaxSize", StringValue ("1p"));
+        Config::Set ("/NodeList/0/DeviceList/0/TxQueue/MaxSize", StringValue ("32p"));
+        Config::Set ("/NodeList/1/DeviceList/0/TxQueue/MaxSize", StringValue ("32p"));
 
         PointerValue ptr; 
         p2pDevices.Get(0)->GetAttribute ("TxQueue", ptr);
@@ -327,7 +327,7 @@ int main(int argc, char *argv[])
         ApplicationContainer serverApp = bbrServer.Install(p2pNodes.Get(1));
         serverApps.push_back(serverApp);
         serverApp.Start(Seconds(kServerStart));
-        serverApp.Stop(Seconds(kServerStop));
+        serverApp.Stop(Seconds(kServerStop ));
 
         UdpBbrSenderHelper bbrClient(i + 1, p2pInterfaces.GetAddress(1), kServerPort + i);
         bbrClient.SetAttribute("Duration", TimeValue(Seconds(0)));
@@ -335,8 +335,8 @@ int main(int argc, char *argv[])
         bbrClient.SetAttribute("PacketSize", UintegerValue(1024));
 
         ApplicationContainer clientApp = bbrClient.Install(p2pNodes.Get(0));
-        clientApp.Start(Seconds(kClientStart));
-        clientApp.Stop(Seconds(kClientStop));
+        clientApp.Start(Seconds(kClientStart + i * 20));
+        clientApp.Stop(Seconds(kClientStop - i * 20));
 
         clientApps.push_back(clientApp);
         //Names::Add("/Names/BbrSender", clientApp.Get(0)); 
