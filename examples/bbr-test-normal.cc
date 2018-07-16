@@ -21,6 +21,9 @@
 #include "ns3/csma-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/stats-module.h"
+#include "ns3/packet-sink.h"
+#include <ns3/mobility-module.h>
+#include <ns3/lte-module.h> 
 
 #include "../helper/udp-bbr-helper.h"
 //#include "../helper/video-helper.h"
@@ -30,12 +33,6 @@
 #include <cstdlib>
 #include <string>
 #include <fstream>
-#include "ns3/core-module.h"
-#include "ns3/point-to-point-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/applications-module.h"
-#include "ns3/network-module.h"
-#include "ns3/packet-sink.h"
 
 // Default Network Topology
 //
@@ -61,9 +58,9 @@ static const float kClientStop = kClientStart + kDuration;
 static const float kServerStop = kClientStop + 1.0;
 
 
-NodeContainer p2pNodes;
+NodeContainer linkNodes;
 PointToPointHelper pointToPoint;
-NetDeviceContainer p2pDevices;
+NetDeviceContainer netDevs;
 
 bool  need_tcp = false;
 
@@ -121,8 +118,8 @@ void OnTimer()
         Config::Set("/NodeList/0/DeviceList/0/$ns3::PointToPointNetDevice/DataRate", StringValue("2.2Mbps"));
         //Config::Set("/NodeList/0/DeviceList/0/$ns3::PointToPointNetDevice/Delay", StringValue("100ms"));
         //Config::Set("/NodeList/1/DeviceList/0/$ns3::PointToPointNetDevice/DataRate", StringValue("1.0Mbps"));
-        //p2pDevices.Get(0)->SetAttribute("Delay",StringValue("100ms"));
-        //p2pDevices.Get(1)->SetAttribute("DataRate",StringValue("1.0Mbps"));
+        //netDevs.Get(0)->SetAttribute("Delay",StringValue("100ms"));
+        //netDevs.Get(1)->SetAttribute("DataRate",StringValue("1.0Mbps"));
 
         //pointToPoint.SetChannelAttribute("Delay", StringValue("100ms"));
         m_timer.SetDelay(MilliSeconds(50000));//20s
@@ -134,9 +131,9 @@ void OnTimer()
         Config::Set("/NodeList/0/DeviceList/0/$ns3::PointToPointNetDevice/DataRate", StringValue("2.2Mbps"));
         //Config::Set("/NodeList/0/DeviceList/0/$ns3::PointToPointNetDevice/Delay", StringValue("50ms"));
         //Config::Set("/NodeList/1/DeviceList/0/$ns3::PointToPointNetDevice/DataRate", StringValue("1.0Mbps"));
-        //p2pDevices.Get(0)->SetAttribute("DataRate",StringValue("2.0Mbps"));
-        //p2pDevices.Get(0)->SetAttribute("Delay",StringValue("50ms"));
-        //p2pDevices.Get(1)->SetAttribute("DataRate",StringValue("2.0Mbps"));
+        //netDevs.Get(0)->SetAttribute("DataRate",StringValue("2.0Mbps"));
+        //netDevs.Get(0)->SetAttribute("Delay",StringValue("50ms"));
+        //netDevs.Get(1)->SetAttribute("DataRate",StringValue("2.0Mbps"));
         //pointToPoint.SetChannelAttribute("Delay", StringValue("50ms"));
         m_timer.SetDelay(MilliSeconds(50000));//20s
     }
@@ -155,31 +152,42 @@ void LossRateSim() {
     m_timer.Schedule();
 }
 
+enum COMMUNICATE_MODE {
+    POINT_TO_POINT,
+    LTE,
+    WIFI
+};
+
 int main(int argc, char *argv[])
 {
     bool verbose = true;
     uint32_t nCsmaLeft = 3;
     uint32_t nCsmaRight = 3;
-    bool tracing = true;
+    bool tracing = false;
     double lossrate = 0.00;
     std::string linkrate = "2Mbps";
     int testcase = 1;
     int users = 1;
     bool useDropTailQueue = false;
     std::string queueSize = "0MB";
+
+    int useLte = 0;
+    std::string modeStr = "point-to-point";
+    int mode = 0;
     //uint32_t queueSize = 1024;
 
 
     CommandLine cmd;
+    cmd.AddValue("testcase", "Tell which test case", testcase);
     cmd.AddValue("nCsmaLeft", "Number of CSMA nodes/devices at left", nCsmaLeft);
     cmd.AddValue("nCsmaRight", "Number of CSMA nodes/devices at right", nCsmaRight);
     cmd.AddValue("verbose", "Tell bbr applications to log if true", verbose);
     cmd.AddValue("tracing", "Enable pcap tracing", tracing);
     cmd.AddValue("linkrate", "Tell p2p linkrate", linkrate);
     cmd.AddValue("lossrate", "Tell p2p lossrate", lossrate);
-    cmd.AddValue("testcase", "Tell which test case", testcase);
     cmd.AddValue("users", "Tell which test case", users);
     cmd.AddValue("queueSize", "Tell the DropTailQueue size of test case 2", queueSize);
+    cmd.AddValue("mode", "Using LTE module(LTE, wifi, p2p)", modeStr);
 
     cmd.Parse(argc, argv);
 
@@ -212,15 +220,14 @@ int main(int argc, char *argv[])
             break;
     }
 
-    // Check for valid number of csma nodes
-    // 250 should be enough, otherwise IP addresses
-    // soon become an issue
-    if (nCsmaLeft > 250 || nCsmaRight > 250)
-    {
-        std::cout << "Too many csma nodes(" << nCsmaLeft << ","
-                  << nCsmaRight << "), no more than 250 each." << std::endl;
-        return 1;
+    if (modeStr.compare("point-to-point") == 0) mode = 0;
+    else if (modeStr.compare("lte") == 0) mode = 1;
+    else if (modeStr.compare("wifi") == 0) mode = 2;
+    else {
+        std::cerr << "error in mode string." << std::endl;
+        return -1;
     }
+    std::cout << "mode= " << mode << std::endl;
 
     if (verbose)
     {
@@ -228,30 +235,53 @@ int main(int argc, char *argv[])
         LogComponentEnable("UdpBbrReceiverApplication",(LogLevel)(LOG_LEVEL_INFO | LOG_PREFIX_FUNC));
     }
 
-    //NodeContainer p2pNodes;
-    p2pNodes.Create(2);
+    //NodeContainer linkNodes;
+    linkNodes.Create(2);
 
-    //PointToPointHelper pointToPoint;
-    pointToPoint.SetDeviceAttribute("DataRate", StringValue(linkrate));
-    pointToPoint.SetChannelAttribute("Delay", StringValue("100ms"));
+    if (mode == COMMUNICATE_MODE::POINT_TO_POINT) {
+        //PointToPointHelper pointToPoint;
+        pointToPoint.SetDeviceAttribute("DataRate", StringValue(linkrate));
+        pointToPoint.SetChannelAttribute("Delay", StringValue("100ms"));
+        netDevs = pointToPoint.Install(linkNodes); 
+        Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
+                //"ErrorRate", DoubleValue(0.01),
+                "ErrorRate", DoubleValue(lossrate),
+                "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
+        netDevs.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
+    } else if (mode == COMMUNICATE_MODE::LTE) { 
+        NodeContainer enbNodes;
+        enbNodes.Create (1);
+        NodeContainer ueNodes;
+        ueNodes.Create (2); 
+
+        Ptr<LteHelper> lteHelper = CreateObject<LteHelper> ();
+        MobilityHelper mobility;
+        mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+        mobility.Install (enbNodes);
+        mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+        mobility.Install (ueNodes);
+
+        NetDeviceContainer enbDevs;
+        enbDevs = lteHelper->InstallEnbDevice (enbNodes);
+        NetDeviceContainer ueDevs;
+        ueDevs = lteHelper->InstallUeDevice (ueNodes);
+        lteHelper->Attach (ueDevs, enbDevs.Get (0));
+        enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
+        EpsBearer bearer (q);
+        lteHelper->ActivateDataRadioBearer (ueDevs, bearer);
+    }
 
 
-    //NetDeviceContainer p2pDevices;
+    //NetDeviceContainer netDevs;
     //pointToPoint.SetQueue("ns3::DropTailQueue", "MaxSize", StringValue(queueSize)); 
-    p2pDevices = pointToPoint.Install(p2pNodes);
 
-    Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
-            //"ErrorRate", DoubleValue(0.01),
-            "ErrorRate", DoubleValue(lossrate),
-            "ErrorUnit", EnumValue(RateErrorModel::ERROR_UNIT_PACKET));
-    p2pDevices.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
     if (useDropTailQueue) {
         //Config::SetDefault ("ns3::QueueBase::MaxSize", StringValue ("80p"));
         std::cout << "Set Queue" << std::endl;
-        Ptr<DropTailQueue<Packet> > queue = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (0))->GetQueue ());
+        Ptr<DropTailQueue<Packet> > queue = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (netDevs.Get (0))->GetQueue ());
         //queue->SetMode(ns3::DropTailQueue::BYTES);
         queue->SetAttribute ("MaxSize", StringValue ("32p"));
-        Ptr<DropTailQueue<Packet> > queue2 = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (p2pDevices.Get (1))->GetQueue ());
+        Ptr<DropTailQueue<Packet> > queue2 = DynamicCast<DropTailQueue<Packet> > (DynamicCast<PointToPointNetDevice> (netDevs.Get (1))->GetQueue ());
         queue2->SetAttribute ("MaxSize", StringValue ("32p"));
 
         QueueSizeValue limit;
@@ -259,14 +289,14 @@ int main(int argc, char *argv[])
         Config::Set ("/NodeList/1/DeviceList/0/TxQueue/MaxSize", StringValue ("32p"));
 
         PointerValue ptr; 
-        p2pDevices.Get(0)->GetAttribute ("TxQueue", ptr);
+        netDevs.Get(0)->GetAttribute ("TxQueue", ptr);
         Ptr<Queue<Packet> > txQueue = ptr.Get<Queue<Packet> > ();
         Ptr<DropTailQueue<Packet> > dtq = txQueue->GetObject <DropTailQueue<Packet> > ();NS_ASSERT (dtq);
         dtq->GetAttribute ("MaxSize", limit);
 
         std::cout << "1.  dtq limit: " << limit.Get ().GetValue () << " packets" << std::endl;
 
-        p2pDevices.Get(1)->GetAttribute ("TxQueue", ptr);
+        netDevs.Get(1)->GetAttribute ("TxQueue", ptr);
         Ptr<Queue<Packet> > enQueue = ptr.Get<Queue<Packet> > ();
         dtq = enQueue->GetObject <DropTailQueue<Packet> > ();
         NS_ASSERT (dtq);                                                                                                                                                                  
@@ -274,57 +304,22 @@ int main(int argc, char *argv[])
 
         std::cout << "2.  enq limit: " << limit.Get ().GetValue () << " packets" << std::endl; 
     }
-    //return 0;
-
-    // CsmaHelper csma;
-    // csma.SetChannelAttribute("DataRate", StringValue("100.0Mbps"));
-    // csma.SetChannelAttribute("Delay", TimeValue(MilliSeconds(0.5)));
-
-    // NodeContainer csmaNodesRight;
-    // csmaNodesRight.Add(p2pNodes.Get(1));
-    // csmaNodesRight.Create(nCsmaRight);
-
-    // NetDeviceContainer csmaDevicesRight;
-    // csmaDevicesRight = csma.Install(csmaNodesRight);
-
-    // NodeContainer csmaNodesLeft;
-    // csmaNodesLeft.Add(p2pNodes.Get(0));
-    // csmaNodesLeft.Create(nCsmaLeft);
-
-    // NetDeviceContainer csmaDevicesLeft;
-    // csmaDevicesLeft = csma.Install(csmaNodesLeft);
-
-    // InternetStackHelper stack;
-    // stack.Install(csmaNodesRight);
-    // stack.Install(csmaNodesLeft);
 
     InternetStackHelper stack;
-    stack.Install(p2pNodes.Get(0));
-    stack.Install(p2pNodes.Get(1));
+    stack.Install(linkNodes.Get(0));
+    stack.Install(linkNodes.Get(1));
 
     Ipv4AddressHelper address;
 
     address.SetBase("10.1.1.0", "255.255.255.0");
     Ipv4InterfaceContainer p2pInterfaces;
-    p2pInterfaces = address.Assign(p2pDevices);
-
-    // address.SetBase("10.1.2.0", "255.255.255.0");
-    // Ipv4InterfaceContainer csmaInterfacesRight;
-    // csmaInterfacesRight = address.Assign(csmaDevicesRight);
-
-    // address.SetBase("10.1.3.0", "255.255.255.0");
-    // address.Assign(csmaDevicesLeft);
-
-
-    //ApplicationContainer clientApps = bbrClient.Install(csmaNodesLeft.Get(nCsmaLeft));
+    p2pInterfaces = address.Assign(netDevs);
 
     std::vector<ApplicationContainer> serverApps;
     std::vector<ApplicationContainer> clientApps;
     for (uint32_t i = 0; i < users; ++i) {
         UdpBbrReceiverHelper bbrServer(kServerPort + i);
-        //VideoReceiverHelper bbrServer(kServerPort);
-        //ApplicationContainer serverApps = bbrServer.Install(csmaNodesRight.Get(nCsmaRight));
-        ApplicationContainer serverApp = bbrServer.Install(p2pNodes.Get(1));
+        ApplicationContainer serverApp = bbrServer.Install(linkNodes.Get(1));
         serverApps.push_back(serverApp);
         serverApp.Start(Seconds(kServerStart));
         serverApp.Stop(Seconds(kServerStop ));
@@ -334,7 +329,7 @@ int main(int argc, char *argv[])
         bbrClient.SetAttribute("DataRate", DataRateValue(DataRate("1.0Mb/s")));
         bbrClient.SetAttribute("PacketSize", UintegerValue(1024));
 
-        ApplicationContainer clientApp = bbrClient.Install(p2pNodes.Get(0));
+        ApplicationContainer clientApp = bbrClient.Install(linkNodes.Get(0));
         clientApp.Start(Seconds(kClientStart + i * 20));
         clientApp.Stop(Seconds(kClientStop - i * 20));
 
@@ -344,28 +339,6 @@ int main(int argc, char *argv[])
 
 
 
-//    if(need_tcp){
-//        //
-//        // Create a BulkSendApplication and install it on node 0
-//        //
-//        uint16_t port = 9;  // well-known echo port number
-//
-//        BulkSendHelper source ("ns3::TcpSocketFactory", InetSocketAddress (p2pInterfaces.GetAddress (1), port));
-//        // Set the amount of data to send in bytes.  Zero is unlimited.
-//        source.SetAttribute ("MaxBytes", UintegerValue (0));
-//        ApplicationContainer sourceApps = source.Install (p2pNodes.Get (0));
-//
-//        sourceApps.Start (Seconds (kServerStart));
-//        sourceApps.Stop (Seconds (kServerStop));
-//        //
-//        // Create a PacketSinkApplication and install it on node 1
-//        //
-//        PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
-//        ApplicationContainer sinkApps = sink.Install (p2pNodes.Get (1));
-//
-//        sinkApps.Start(Seconds(kServerStart));
-//        sinkApps.Stop(Seconds(kServerStop));
-//    }
 
 
     /*
@@ -443,7 +416,7 @@ int main(int argc, char *argv[])
     }
 
 #if 0
-    printNodes(p2pNodes);
+    printNodes(linkNodes);
   printNodes(csmaNodesRight);
   printNodes(csmaNodesLeft);
 #endif
